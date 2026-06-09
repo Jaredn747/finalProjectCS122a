@@ -46,6 +46,7 @@ target_link_libraries(pico
     pico_stdlib
     pico_cyw43_arch_none
     hardware_adc
+    hardware_spi
     FreeRTOS-Kernel
     FreeRTOS-Kernel-Heap4
 )
