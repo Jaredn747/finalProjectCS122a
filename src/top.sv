@@ -172,19 +172,21 @@ module top (
     reg [3:0] cursor_col     = 0;
     reg [2:0] cursor_row     = 0;
 
-    integer gi;
-    initial begin
-        for (gi = 0; gi < 16; gi = gi + 1)
-            note_grid[gi] = 8'b0;
-    end
+    // Power-on reset counter (done after 16 cycles)
+    reg [4:0] rst_cnt  = 0;
+    wire      rst_done = rst_cnt[4];
 
-    // Process commands when both SPI bytes have been received
+    // Single always block owns all note_grid writes (no multi-driver)
     always @(posedge CLK) begin
-        if (cmd_valid) begin
-            if (spi_cmd[7]) begin               // NOTE_ON: 0x80 | step
-                playhead_col            <= spi_cmd[3:0];
-                note_grid[spi_cmd[3:0]] <= spi_data;
-                note_on_active          <= 1;
+        if (!rst_done) begin
+            // Clear all 16 columns one per clock cycle before accepting SPI
+            note_grid[rst_cnt[3:0]] <= 8'b0;
+            rst_cnt <= rst_cnt + 1;
+        end else if (cmd_valid) begin
+            // Process commands once both SPI bytes have been received
+            if (spi_cmd[7]) begin               // NOTE_ON: 0x80 | step — advance playhead only
+                playhead_col   <= spi_cmd[3:0];
+                note_on_active <= 1;
             end else begin
                 case (spi_cmd[6:5])
                     2'b11: begin                // GRID_UPDATE: 0x60 | col
@@ -249,6 +251,13 @@ module top (
                     LCD_B = 5'd0;
                 end
 
+                // Cursor cell background (teal fill)
+                if (is_cursor_cell) begin
+                    LCD_R = 5'd0;
+                    LCD_G = 6'd15;
+                    LCD_B = 5'd20;
+                end
+
                 // Active note block
                 if (inside_note_block) begin
                     LCD_R = 5'd31;
@@ -263,10 +272,10 @@ module top (
                     LCD_B = 5'd18;
                 end
 
-                // Cursor cell outline (white — drawn over grid lines)
+                // Cursor cell outline (bright cyan — drawn over grid lines)
                 if (is_cursor_cell && is_grid_line) begin
-                    LCD_R = 5'd31;
-                    LCD_G = 6'd63;
+                    LCD_R = 5'd0;
+                    LCD_G = 6'd50;
                     LCD_B = 5'd31;
                 end
             end

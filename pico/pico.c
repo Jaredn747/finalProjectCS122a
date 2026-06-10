@@ -150,6 +150,10 @@ typedef enum {
 } TickState;
 
 void tick_task(void *pvParameters) {
+    // Clear all FPGA grid columns at startup so stale Pico state doesn't show
+    for (uint8_t col = 0; col < NUM_STEPS; col++)
+        spi_send(MSG_GRID_UPDATE(col), 0x00);
+
     uint8_t   step  = 0;
     TickState state = TICK_NOTE_ON;
 
