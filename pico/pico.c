@@ -10,13 +10,12 @@
 #define NUM_STEPS   16
 #define GRID_ROWS   8
 #define ADC_GPIO    26
-#define BPM_MIN     60
-#define BPM_MAX     200
+#define BPM_MIN     40
+#define BPM_MAX     140
 
-// Sequencer grid: grid[row][col], 1 = note active
+// Sequencer grid
 static uint8_t grid[GRID_ROWS][NUM_STEPS] = {0};
 
-// Returns bitmask of active rows for a step column (bit 0 = row 0)
 static uint8_t get_row_mask(uint8_t step) {
     uint8_t mask = 0;
     for (int row = 0; row < GRID_ROWS; row++) {
@@ -26,30 +25,30 @@ static uint8_t get_row_mask(uint8_t step) {
     return mask;
 }
 
-// SPI pins (SPI0)
+// SPI pins 
 #define SPI_PORT spi0
 #define PIN_SCK  18
 #define PIN_MOSI 19
 #define PIN_CS   17
 
 // Joystick and button pins
-#define JOY_X_GPIO  27    // ADC1
-#define JOY_Y_GPIO  28    // ADC2
-#define BTN_TOGGLE  16
+#define JOY_X_GPIO 27    // ADC1
+#define JOY_Y_GPIO 28    // ADC2
+#define BTN_TOGGLE 16
 
-// Joystick movement thresholds (12-bit ADC, center ~2048)
-#define JOY_HI  3000
-#define JOY_LO  1000
+// Joystick movement thresholds 
+#define JOY_HI 3000
+#define JOY_LO 1000
 
 // SPI message types:
 //   0x80 | step  = NOTE_ON   — advance playhead, update grid column
 //   0x60 | col   = GRID_UPDATE — update one grid column (no playhead change)
 //   0x40 | row   = CURSOR    — move cursor to (row, payload=col)
 //   0x00         = NOTE_OFF
-#define MSG_NOTE_ON(step)      ((uint8_t)(0x80 | ((step) & 0x0F)))
-#define MSG_NOTE_OFF           ((uint8_t)0x00)
-#define MSG_GRID_UPDATE(col)   ((uint8_t)(0x60 | ((col)  & 0x0F)))
-#define MSG_CURSOR(row)        ((uint8_t)(0x40 | ((row)  & 0x07)))
+#define MSG_NOTE_ON(step) ((uint8_t)(0x80 | ((step) & 0x0F)))
+#define MSG_NOTE_OFF ((uint8_t)0x00)
+#define MSG_GRID_UPDATE(col) ((uint8_t)(0x60 | ((col)  & 0x0F)))
+#define MSG_CURSOR(row) ((uint8_t)(0x40 | ((row)  & 0x07)))
 
 static volatile uint32_t g_bpm = 120;
 
@@ -58,7 +57,6 @@ static volatile uint8_t cursor_col = 0;
 
 static SemaphoreHandle_t spi_mutex;
 
-// Always sends 2 bytes: command + payload
 // Mutex-protected so tick_task and input_task don't collide on the SPI bus
 static void spi_send(uint8_t cmd, uint8_t payload) {
     uint8_t buf[2] = {cmd, payload};
@@ -71,31 +69,31 @@ static void spi_send(uint8_t cmd, uint8_t payload) {
 
 // Joystick state machine states
 typedef enum {
-    JOY_IDLE,   // centered — ready for next move
-    JOY_MOVED,  // tilted — waiting to return to center before moving again
+    JOY_IDLE,  
+    JOY_MOVED, 
 } JoyState;
 
 // Input Task: reads potentiometer (BPM), joystick (cursor), and button (note toggle)
 void input_task(void *pvParameters) {
     adc_init();
-    adc_gpio_init(ADC_GPIO);    // GPIO 26 = potentiometer
-    adc_gpio_init(JOY_X_GPIO);  // GPIO 27 = joystick X
-    adc_gpio_init(JOY_Y_GPIO);  // GPIO 28 = joystick Y
+    adc_gpio_init(ADC_GPIO);    
+    adc_gpio_init(JOY_X_GPIO);
+    adc_gpio_init(JOY_Y_GPIO);  
 
     gpio_init(BTN_TOGGLE);
     gpio_set_dir(BTN_TOGGLE, GPIO_IN);
-    gpio_pull_up(BTN_TOGGLE);   // active low: idle = high
+    gpio_pull_up(BTN_TOGGLE);   
 
     JoyState joy_state = JOY_IDLE;
-    bool btn_prev = true;       // previous button state (true = not pressed)
+    bool btn_prev = true;       
 
     while (1) {
-        // Read potentiometer (ADC0)
+        // Read potentiometer 
         adc_select_input(0);
         uint16_t pot = adc_read();
         g_bpm = BPM_MIN + ((uint32_t)pot * (BPM_MAX - BPM_MIN)) / 4095;
 
-        // Read joystick axes (ADC1=VRY, ADC2=VRX — swapped to match physical orientation)
+        // Read joystick axes 
         adc_select_input(1);
         uint16_t y = adc_read();
         adc_select_input(2);
@@ -125,7 +123,6 @@ void input_task(void *pvParameters) {
                 break;
 
             case JOY_MOVED:
-                // Wait for joystick to return to center before next move
                 if (x >= JOY_LO && x <= JOY_HI && y >= JOY_LO && y <= JOY_HI)
                     joy_state = JOY_IDLE;
                 break;
@@ -143,14 +140,13 @@ void input_task(void *pvParameters) {
     }
 }
 
-// Tick Task: advances the sequencer and sends NOTE_ON/OFF to FPGA via SPI
+// Tick Task
 typedef enum {
     TICK_NOTE_ON,
     TICK_NOTE_OFF,
 } TickState;
 
 void tick_task(void *pvParameters) {
-    // Clear all FPGA grid columns at startup so stale Pico state doesn't show
     for (uint8_t col = 0; col < NUM_STEPS; col++)
         spi_send(MSG_GRID_UPDATE(col), 0x00);
 
@@ -181,7 +177,7 @@ void tick_task(void *pvParameters) {
     }
 }
 
-// LED Heartbeat: flashes at BPM so you can verify timing visually
+// LED Heartbeat: this is just to verify BPM without the serial monitor 
 void led_task(void *pvParameters) {
     cyw43_arch_init();
 
@@ -197,12 +193,10 @@ void led_task(void *pvParameters) {
 int main() {
     stdio_init_all();
 
-    // SPI0 at 1 MHz, mode 0 (CPOL=0, CPHA=0)
     spi_init(SPI_PORT, 1000 * 1000);
     gpio_set_function(PIN_SCK,  GPIO_FUNC_SPI);
     gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
 
-    // CS is manual (active low), start idle high
     gpio_init(PIN_CS);
     gpio_set_dir(PIN_CS, GPIO_OUT);
     gpio_put(PIN_CS, 1);

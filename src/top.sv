@@ -4,7 +4,7 @@ module top (
     // SPI slave — receives commands from Pico
     input  wire SPI_SCK,
     input  wire SPI_MOSI,
-    input  wire SPI_CS,    // active low
+    input  wire SPI_CS,   
 
     output wire LCD_CLK,
     output wire LCD_DEN,
@@ -92,13 +92,6 @@ module top (
         ((cell_x == 0) || (cell_y == 0) ||
          (cell_x == CELL_W - 1) || (cell_y == CELL_H - 1));
 
-    // ----------------------------------------------------------------
-    // SPI Slave — receives 2-byte commands from Pico master
-    //   Byte 0 (cmd):  0x80|step = NOTE_ON, 0x60|col = GRID_UPDATE
-    //                  0x40|row  = CURSOR,   0x00   = NOTE_OFF
-    //   Byte 1 (data): row mask or cursor column
-    // ----------------------------------------------------------------
-
     // 2/3-stage synchronizers for external SPI signals (metastability protection)
     reg sck_r0=0, sck_r1=0, sck_r2=0;
     reg cs_r0=0,  cs_r1=0;
@@ -110,20 +103,20 @@ module top (
         mosi_r0 <= SPI_MOSI; mosi_r1 <= mosi_r0;
     end
 
-    wire sck_rising = sck_r1 && !sck_r2;   // one-cycle pulse on SCK rising edge
-    wire cs_sync    = cs_r1;                // synchronized CS (active low)
+    wire sck_rising = sck_r1 && !sck_r2;   
+    wire cs_sync    = cs_r1;                
 
     // SPI state machine states
     localparam SPI_IDLE = 1'b0;
     localparam SPI_RECV = 1'b1;
     reg spi_state = SPI_IDLE;
 
-    reg [6:0] spi_shift = 0;    // 7-bit accumulator; full byte = {spi_shift, mosi_r1}
-    reg [2:0] bit_cnt   = 0;    // counts bits 0-7 within each byte
-    reg       byte_idx  = 0;    // 0 = waiting for cmd byte, 1 = waiting for data byte
-    reg [7:0] spi_cmd   = 0;    // latched command byte
-    reg [7:0] spi_data  = 0;    // latched data byte
-    reg       cmd_valid = 0;    // 1-cycle pulse when both bytes are ready
+    reg [6:0] spi_shift = 0;   
+    reg [2:0] bit_cnt = 0;     
+    reg byte_idx  = 0;         
+    reg [7:0] spi_cmd = 0;     
+    reg [7:0] spi_data = 0;    
+    reg cmd_valid = 0;         
 
     always @(posedge CLK) begin
         cmd_valid <= 0;
@@ -132,8 +125,8 @@ module top (
             SPI_IDLE: begin
                 if (!cs_sync) begin             // CS asserted (low)
                     spi_state <= SPI_RECV;
-                    bit_cnt   <= 0;
-                    byte_idx  <= 0;
+                    bit_cnt <= 0;
+                    byte_idx <= 0;
                     spi_shift <= 0;
                 end
             end
@@ -143,40 +136,37 @@ module top (
                     spi_state <= SPI_IDLE;
                 end else if (sck_rising) begin
                     if (bit_cnt == 7) begin
-                        bit_cnt   <= 0;
+                        bit_cnt <= 0;
                         spi_shift <= 0;
                         if (byte_idx == 0) begin
-                            spi_cmd  <= {spi_shift, mosi_r1};   // latch cmd byte
+                            spi_cmd <= {spi_shift, mosi_r1};   // latch cmd byte
                             byte_idx <= 1;
                         end else begin
-                            spi_data  <= {spi_shift, mosi_r1};  // latch data byte
+                            spi_data <= {spi_shift, mosi_r1};  // latch data byte
                             cmd_valid <= 1;                     // both bytes ready
-                            byte_idx  <= 0;
+                            byte_idx <= 0;
                         end
                     end else begin
                         spi_shift <= {spi_shift[5:0], mosi_r1};
-                        bit_cnt   <= bit_cnt + 1;
+                        bit_cnt <= bit_cnt + 1;
                     end
                 end
             end
         endcase
     end
 
-    // ----------------------------------------------------------------
     // Sequencer state: note grid, playhead, cursor
-    // ----------------------------------------------------------------
+    reg [7:0] note_grid [0:15];  
+    reg [3:0] playhead_col = 0;
+    reg note_on_active = 0;
+    reg [3:0] cursor_col = 0;
+    reg [2:0] cursor_row = 0;
 
-    reg [7:0] note_grid [0:15];  // note_grid[col] = 8-bit row mask (bit 0 = row 0)
-    reg [3:0] playhead_col   = 0;
-    reg       note_on_active = 0;
-    reg [3:0] cursor_col     = 0;
-    reg [2:0] cursor_row     = 0;
+    // Power-on reset counter, will be done after 16 cycles
+    reg [4:0] rst_cnt = 0;
+    wire rst_done = rst_cnt[4];
 
-    // Power-on reset counter (done after 16 cycles)
-    reg [4:0] rst_cnt  = 0;
-    wire      rst_done = rst_cnt[4];
-
-    // Single always block owns all note_grid writes (no multi-driver)
+    // Single always block owns all note_grid writes
     always @(posedge CLK) begin
         if (!rst_done) begin
             // Clear all 16 columns one per clock cycle before accepting SPI
@@ -184,19 +174,19 @@ module top (
             rst_cnt <= rst_cnt + 1;
         end else if (cmd_valid) begin
             // Process commands once both SPI bytes have been received
-            if (spi_cmd[7]) begin               // NOTE_ON: 0x80 | step — advance playhead only
+            if (spi_cmd[7]) begin              
                 playhead_col   <= spi_cmd[3:0];
                 note_on_active <= 1;
             end else begin
                 case (spi_cmd[6:5])
-                    2'b11: begin                // GRID_UPDATE: 0x60 | col
+                    2'b11: begin                
                         note_grid[spi_cmd[3:0]] <= spi_data;
                     end
-                    2'b10: begin                // CURSOR: 0x40 | row
+                    2'b10: begin                
                         cursor_row <= spi_cmd[2:0];
                         cursor_col <= spi_data[3:0];
                     end
-                    default: begin              // NOTE_OFF: 0x00
+                    default: begin              
                         note_on_active <= 0;
                     end
                 endcase
@@ -295,15 +285,7 @@ module top (
         end
     end
 
-    // ----------------------------------------------------------------
-    // Audio Synthesis: square wave to passive piezo buzzer
-    //
-    // Row-to-note mapping (row 0 = top = highest pitch):
-    //   Row 0: C5  Row 1: B4  Row 2: A4  Row 3: G4
-    //   Row 4: F4  Row 5: E4  Row 6: D4  Row 7: C4
-    // ----------------------------------------------------------------
-
-    // Half-period lookup table (25 MHz clock cycles per half-period)
+    // Audio Synthesis
     function [15:0] note_half_period;
         input [2:0] row;
         case (row)
@@ -319,16 +301,16 @@ module top (
         endcase
     endfunction
 
-    // Active rows for the current playhead column (from live note grid)
+    // Active rows for the current playhead column 
     wire [7:0] audio_mask = note_grid[playhead_col];
 
     // Priority encoder: pick the lowest active row
     reg [2:0] audio_row;
-    reg       audio_active;
+    reg audio_active;
     always @(*) begin
-        audio_row    = 3'd0;
+        audio_row = 3'd0;
         audio_active = 1'b0;
-        if      (audio_mask[0]) begin audio_row = 3'd0; audio_active = 1'b1; end
+        if (audio_mask[0]) begin audio_row = 3'd0; audio_active = 1'b1; end
         else if (audio_mask[1]) begin audio_row = 3'd1; audio_active = 1'b1; end
         else if (audio_mask[2]) begin audio_row = 3'd2; audio_active = 1'b1; end
         else if (audio_mask[3]) begin audio_row = 3'd3; audio_active = 1'b1; end
@@ -340,7 +322,7 @@ module top (
 
     // Square wave generator state machine
     reg [15:0] buzz_cnt = 0;
-    reg        buzz_out = 0;
+    reg buzz_out = 0;
 
     always @(posedge CLK) begin
         if (!audio_active || !note_on_active) begin
