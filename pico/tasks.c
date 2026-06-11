@@ -38,10 +38,10 @@ int JS_Tick(int state) {
         case JS_Moved:
             g_bpm = BPM_MIN + ((uint32_t)pot * (BPM_MAX - BPM_MIN)) / 4095;
             if (joy_now != last_joy) {
-                if      (joy_now == 1) { cursor_col = (cursor_col + 1) % NUM_STEPS; }
-                else if (joy_now == 2) { cursor_col = (cursor_col == 0) ? NUM_STEPS - 1 : cursor_col - 1; }
-                else if (joy_now == 3) { cursor_row = (cursor_row == 0) ? GRID_ROWS - 1 : cursor_row - 1; }
-                else if (joy_now == 4) { cursor_row = (cursor_row + 1) % GRID_ROWS; }
+                if      (joy_now == 1) { cursor_row = (cursor_row == 0) ? GRID_ROWS - 1 : cursor_row - 1; }
+                else if (joy_now == 2) { cursor_row = (cursor_row + 1) % GRID_ROWS; }
+                else if (joy_now == 3) { cursor_col = (cursor_col + 1) % NUM_STEPS; }
+                else if (joy_now == 4) { cursor_col = (cursor_col == 0) ? NUM_STEPS - 1 : cursor_col - 1; }
                 spi_send(MSG_CURSOR(cursor_row), cursor_col);
             }
             break;
@@ -58,7 +58,7 @@ int JS_Tick(int state) {
 }
 
 // Task 2 Sequencer
-]enum Tick_States { TICK_Start, TICK_NOTE_ON, TICK_NOTE_OFF };
+enum Tick_States { TICK_Start, TICK_NOTE_ON, TICK_NOTE_OFF };
 
 int Tick_Sequencer(int state) {
     static uint8_t  step      = 0;

@@ -205,7 +205,7 @@ module top (
                 if (audio_active && note_on) begin
                     audio_state <= AUDIO_ACTIVE;
                     buzz_cnt <= 0;
-                    buzz_out <= 0;
+                    buzz_out <= 1;
                 end
 
             AUDIO_ACTIVE:

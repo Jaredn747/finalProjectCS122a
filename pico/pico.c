@@ -28,9 +28,11 @@ int main(void) {
     // LED
     cyw43_arch_init();
 
-    // clear FPGA grid
+    // clear FPGA grid, cursor, and note state
     for (uint8_t col = 0; col < NUM_STEPS; col++)
         spi_send(MSG_GRID_UPDATE(col), 0x00);
+    spi_send(MSG_CURSOR(0), 0);
+    spi_send(MSG_NOTE_OFF, 0x00);
 
     // register tasks
     unsigned char i = 0;
