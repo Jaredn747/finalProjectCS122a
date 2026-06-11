@@ -33,7 +33,10 @@ endif()
 add_subdirectory("${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2350_ARM_NTZ" FREERTOS_KERNEL)
 
 # Add executable. Default name is the project name, version 0.1
-add_executable(pico pico.c)
+add_executable(pico
+    pico.c
+    tasks.c
+)
 
 pico_set_program_name(pico "pico")
 pico_set_program_version(pico "0.1")
